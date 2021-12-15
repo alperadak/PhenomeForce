@@ -1,0 +1,641 @@
+
+####################################################################################
+################## Create the Shape file using UAS tools ###########################
+####################################################################################
+
+#install.packages("devtools")
+library("devtools")
+#devtools::install_github("andersst91/UAStools")
+library("UAStools")
+
+
+A_cords<-c(746240.130,3382053.280)
+B_cords<-c(746334.216,3382152.419)
+setwd("C:/Users/alperadak/Desktop/Phenome force/raw shp file")
+
+plots.shp<-plotshpcreate(A=A_cords, #Point A c(Easting_0.0,Northing_0.0)
+                         B=B_cords, #Point B c(Easting_1.0,Northing_1.0)
+                         infile=read.csv("C:/Users/alperadak/Desktop/Phenome force/Fieldmap.csv",header=T),
+                         outfile="G2FE",
+                         nrowplot=2,
+                         field="2017",
+                         rowspc = 2.5, 
+                         rowbuf = 0.1,
+                         rangespc = 25, 
+                         rangebuf = 2,
+                         unit = "feet",
+                         UTMzone = "14", 
+                         Hemisphere = "N")
+
+## After you read the tiff file belonging to a flight date, 
+## you will check the alligmment between shp file and each tiff file(orthomosiacs) in 
+## any external sofware (e.g. QGIS) to be sure that every shp file contain the row plots accurately.
+
+
+####################################################################################
+########### Integration of the external shape file into FIELDimageR ################
+####################################################################################
+
+library(FIELDimageR)
+library(raster)
+library("sp")
+library("raster")
+library("rgdal")
+library('lidR')
+
+memory.limit(size=800000000000)
+
+setwd("C:/Users/alperadak/Desktop/Phenome force") ### Setting the file directory by this code.
+
+EX1<-stack("Example for Phenome Force_061617(just G2FE)_0.tif") ## Reading the tiff file you want to process
+
+EX11<-aggregate(EX1, fact=4) ## reducing the resoluation. Using high numbers for fact is not desired. 
+
+setwd("C:/Users/alperadak/Desktop/Phenome force/adjusted shp file") ## Shp file directory
+
+EX1.Shape<-readOGR("CS17_G2F_buff.shp") ## External shp file
+
+#cellStats(EX11, min)
+#cellStats(EX11, max)
+
+plotRGB(EX11) ## This allows you to visualize .tif file in R. Scale is obtained from max value rounded up to nearest thousand
+
+plot(EX1.Shape,add=T,col="red") # merge the external shp file and orthomosaic
+
+EX1.RemSoil<-fieldMask(mosaic=EX11,
+                       Red=1,
+                       Green=2,
+                       Blue=3,
+                       index="HUE",
+                       cropValue=0.7,
+                       cropAbove=T) ## Removes any instance of soil from tif file
+
+
+Veg.Indices<-fieldIndex(mosaic = EX1.RemSoil$newMosaic,
+                        index=c("BI","GLI","NGRDI","VARI","BGI"),
+                        myIndex=c("(Blue/(Red+Green+Blue))",#BCC
+                                  "((0.441*Red)-(0.811*Green)+(0.385*Blue)+18.78745)",#CIVE
+                                  "(((2*Green)-Red-Blue)+((0.441*Red)-(0.811*Green)+(0.385*Blue)+18.78745)+((3*Green)-(2.4*Red)-Blue)+(Green/(Red^0.667*Blue^0.334)))",#COM1
+                                  "((0.36*((2*Green)-Red-Blue))+(0.47*((0.441*Red)-(0.811*Green)+(0.385*Blue)+18.78745))+(0.17*(Green/(Red^0.667*Blue^0.334))))",#COM2
+                                  "((2*Green)-Red-Blue)",#ExG
+                                  "(((2*Green)-Red-Blue)/(Red+Green+Blue))",#ExG2
+                                  "((3*Green)-(2.4*Red)-Blue)",#ExGR
+                                  "((1.4*Red)-Green)",#EXR
+                                  "(Green-Blue)",#G-B
+                                  "(Green-Red)",#G-R
+                                  "(Green/Blue)",#G/B
+                                  "(Green/Red)",#G/R
+                                  "(Green/(Red+Green+Blue))",#GCC
+                                  "((1.262*Green)-(0.884*Red)-(0.311*Blue))",#MExG
+                                  "((Green^2)-(Red^2))/((Green^2)+(Red^2))",#MGVRI
+                                  "128*(((Green-Red)/(Green+Red))+1)",#NDI
+                                  "(Red-Blue)/(Red+Blue)",#NDRBI
+                                  "(Green-Blue)/(Green+Blue)",#NGBDI
+                                  "(Red-Blue)",#R-B
+                                  "(Red/Blue)",#R/B
+                                  "(Red/(Red+Green+Blue))",#RCC
+                                  "(Red^3/(Red+Green+Blue))",#MRCCbyAlper
+                                  "(((Green^2)-(Red*Blue))/((Green^2)+(Red*Blue)))",#RGBVI
+                                  "(Green-((0.39*Red)-(0.69*Blue)))",#TGI
+                                  "Green/(Red^0.667*Blue^0.334)",#VEG
+                                  "((Red-Blue)/Green)",#MyIndex
+                                  "sqrt(Green/Red)",#MSRGR
+                                  "sqrt((Green-Red)/(Green+Red)+0.5)"#TNDGR
+                        ))
+
+
+
+setwd("C:/Users/alperadak/Desktop/Phenome force/adjusted shp file") ## Shp file directory
+
+EX1.Shape<-readOGR("CS17_G2F_buff.shp") ## External shp file
+
+projection(EX1.Shape)<-projection(Veg.Indices) ##Makes coordinate system of .tif with indices and without soil and .shp the same
+
+EX1.Info1<-fieldInfo(mosaic=Veg.Indices,
+                     fieldShape=EX1.Shape,
+                     n.core=10) ## Extracts all vegetation indices (layers) for each .shp file
+
+EX1.Info1$fieldShape@data
+
+write.csv(EX1.Info1$fieldShape@data,
+          "C:/Users/alperadak/Desktop/Phenome force/061617.csv",
+          row.names=F) ##Don't forget to change the save directory as well! This is where the completed excel file will save.
+
+hist(EX1.Info1$fieldShape$NGRDI)
+
+################################################################################
+################### Read the data (VIs) belonging to 061617 ####################
+################################################################################
+
+
+
+setwd("C:/Users/alperadak/Desktop/Phenome force")
+data <- read.csv("061617.csv")
+names(data)[12:39] <- c("BCC","CIVE", "COM1", "COM2", "ExG", "ExG2",  "ExGR", "ExR", "G-B", "G-R", "G/B", "G/R", "GCC", "MExG", "MGVRI",
+                        "NDI", "NDRBI", "NGBDI", "R-B", "R/B","RCC", "MRCC", "RGBVI","TGI","VEG", "MyIndex", "MSRGR", "TNDGR" )
+head(data)
+
+
+setwd("C:/Users/alperadak/Desktop/Phenome force/Fieldmap")
+Fieldmap2 <- read.csv("Fieldmap (range, row, rep).csv", header = T, sep=",", check.names = F)
+head(Fieldmap2)
+library(dplyr)
+
+df = merge(x=data,y=Fieldmap2, by="id", all.x=TRUE)
+head(df)
+
+
+###################################################################
+########### ANOVA (mixed model) for single time points ############
+###################################################################
+
+library(lme4)
+str(df)
+df$Range <- as.factor(df$Range)
+df$Row <- as.factor(df$Row)
+df$Rep <- as.factor(df$Rep)
+df$Pedigree <- as.factor(df$Pedigree)
+head(df)
+
+GLI_anova<- lmer( GLI ~ (1|Pedigree)+
+                    (1|Range)+
+                    (1|Row)+
+                    (1|Rep), df )
+
+GLI_anova
+
+
+VC<-as.data.frame(print(VarCorr(GLI_anova ), comp=c("Variance")))
+VC$Percent<-VC$vcov/sum(VC$vcov)
+VC
+heritability <- VC[1,6]/(VC[1,6]+(VC[5,6]/2)) 
+round(heritability,3)  
+
+
+BV1 <- ranef(GLI_anova)$'Pedigree' + 0.135201437 # Breeding values ; add the intercept on the BLUPs
+
+BV2 <- coef(GLI_anova)$Pedigree # Breeding values 
+names(BV2)[1]<- "GLI"
+hist(as.numeric(BV2$GLI)
+   
+     
+     
+     
+  
+################################################################################
+################ ANOVA (mixed model) for multiple time points ##################
+################################################################################
+setwd("C:/Users/alperadak/Desktop/Phenome force")
+
+df <- read.csv("G2FE_2017_stacked (Raw2).csv")
+str(data2)
+
+library(lme4)
+library(ggplot2)
+
+str(df)
+df$Range <- as.factor(df$Range)
+df$Row <- as.factor(df$Row)
+df$Rep <- as.factor(df$Rep)
+df$Pedigree <- as.factor(df$Pedigree)
+df$DAP <- as.factor(df$DAP)
+head(df)
+
+ggplot(df, aes(DAP, GLI))+geom_boxplot()
+
+
+GLI_anova<- lmer( GLI ~ (1|DAP)+
+                    (1|Pedigree:DAP)+
+                    (1|Range:DAP)+
+                    (1|Row:DAP)+
+                    (1|Rep:DAP), df )    
+
+
+GLI_anova
+
+VC<-as.data.frame(print(VarCorr(GLI_anova ), comp=c("Variance")))
+VC$Percent<-VC$vcov/sum(VC$vcov)
+VC$Percent*100
+heritability <- VC[1,6] / (VC[1,6] + (VC[6,6]/2))
+round(heritability,3)  
+
+
+b<-summary(GLI_anova)$coefficients[[1]][1]
+
+head(ranef(GLI_anova)[[1]])
+
+DAP_BLUPS<-ranef(GLI_anova)$DAP
+
+BV<-ranef(GLI_anova)[[1]]
+
+BV$`(Intercept)`<-BV$`(Intercept)`+b
+
+BV[,2] <- rownames(BV)
+names(BV)[1:2]<- c("TBLUP_GLI","interaction")
+head(BV)
+BV$DAP <- lapply(strsplit(as.character(BV$interaction), "\\:"), "[", 2)
+BV$Pedigree <- lapply(strsplit(as.character(BV$interaction), "\\:"), "[", 1)
+head(BV)
+
+for (i in 1:nrow(BV)){
+  BV$TBLUP_GLI[i]<-BV$TBLUP_GLI[i]+DAP_BLUPS$`(Intercept)`[row.names(DAP_BLUPS)==BV$DAP[i]]
+}
+
+BV2 <- as.data.frame(lapply(BV, unlist))
+
+BV2$DAP<-as.factor(BV2$DAP)
+
+BV2$DAP<-factor(BV2$DAP,levels(BV2$DAP)[c(4:16,1:3)])
+
+p  <- ggplot(BV2, aes(x=DAP, y=TBLUP_GLI, group=Pedigree)) +
+  geom_line(size=0.5, alpha=0.6)
+p
+
+################################################################################
+##################### Read the combined phenomic data ##########################
+################################################################################
+
+
+################### Corelation matrix of phenomic data #########################
+
+setwd("C:\\Users\\alperadak\\Desktop\\Phenome force")
+
+TBLUP_wide <- read.csv("G2FE_2017 (TBLUP).csv",header = T, check.names = F)
+
+TBLUP_wide[1:5,80:285]
+
+library("gplots")
+r <- cor(TBLUP_wide[,6:ncol(TBLUP_wide)], method = "pearson", use="complete.obs")
+
+col<- colorRampPalette(c("navy","white","red"))(500)
+
+#jpeg("E:\\Figures for Aaron\\2020_2021_Predictions\\correlation_20.jpeg", width = 15,height = 10,units = "in", res=1000)
+
+heatmap.2(r, scale = "none", col = col, 
+          trace = "none", density.info = "none")
+
+#dev.off()
+
+
+##################### Visualisation of phenomic data ###########################
+
+stack(TBLUP_wide)
+library(reshape)
+stack <- melt(TBLUP_wide, id.vars=c('Pedigree', 'DTA', 'DTS', 'PHT', 'GY'),var='TBLUP')
+stack$Flight <- lapply(strsplit(as.character(stack$TBLUP), "\\_"), "[", 2)
+stack$VI <- lapply(strsplit(as.character(stack$TBLUP), "\\_"), "[", 1)
+head(stack)
+
+
+stack2 <- as.data.frame(lapply(stack, unlist))
+
+str(stack2)
+stack2$Flight <-  as.numeric(stack2$Flight)
+
+p <- ggplot(stack2, aes(x=Flight, y=value, group=Pedigree,  color=GY)) + 
+  geom_line(size=0.5, alpha=0.6)+ 
+  facet_wrap(~VI, scales = "free_y", ncol = 6) +  theme(
+  panel.background = element_rect(fill = "gray70",
+                                    colour = "black",
+                                    size = 0.5, linetype = "solid"),
+  panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                    colour = "gray80"), 
+  panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                    colour = "gray80")) + 
+  theme(strip.background =  element_rect(color="white", fill="white", size=1, linetype="solid"),
+            strip.text.x = element_text(size = 10, color = "black", face = "plain"),
+            strip.text.y = element_text(size = 10, color = "black", face = "plain"),
+            axis.title.y = element_text(face = "plain", color = "black", size = 10),
+            axis.title.x = element_text(face = "plain", color = "black", size = 10),
+            legend.title= element_text(face = "plain", color = "black", size = 10),
+            legend.text = element_text(face = "plain", color = "black", size = 10),
+            axis.text.x = element_text(face="plain", color="black", size=10, angle=65, vjust=0.5,  hjust = 0.5),
+            axis.text.y  = element_text(face="plain", color="black",size=10, angle=0, hjust = 1)) +
+  scale_y_continuous(name= "Temporal breeding values (TBLUP)" )+
+  theme(legend.position="right") + scale_x_continuous(name= "Days after planting (DAP)", breaks=c(27, 34,41,48,55,59,63,69,77,82,88,97,103,105,118))
+
+p
+
+p + scale_color_gradient2(low="navy", high="red", mid = "white", midpoint = 10.5, guide="colorbar") + labs(color = "Yield (t/ha)")
+
+#p+ scale_color_gradientn(colours = rainbow(4))
+
+#ggsave(filename="output.jpg", units = "in", width =23, height = 12, dpi = 100, device='jpg', scale = 1)
+
+library(dplyr)
+NGRDI <- select(TBLUP_wide,contains( c("NGRDI","GY") ))
+
+library(corrplot)
+library(ggpubr)
+library(Hmisc)
+library(tidyverse)
+
+####### correlation with significance values
+
+cor_2 <- rcorr(as.matrix(NGRDI))
+M <- cor_2$r
+p_mat <- cor_2$P
+
+####### Fine tunnig, custom code for correaltion
+
+col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+corrplot(M, method = "color", col = col(200),  
+         type = "upper", order = "hclust", 
+         addCoef.col = "black", # Add coefficient of correlation
+         tl.col = "darkblue", tl.srt = 45, #Text label color and rotation
+         # Combine with significance level
+         p.mat = p_mat, sig.level = 0.05,  
+         # hide correlation coefficient on the principal diagonal
+         diag = FALSE 
+)
+
+######################## Phenomic prdiction model ##############################
+
+
+library(caret)
+library(missForest)
+library(caret)
+library(glmnet)
+library(mlbench)
+library(psych)
+library(tidyverse)
+library(parallel)
+library(foreach)
+library(doParallel)
+
+##################### Cluster ###############
+
+cluster <- makeCluster(detectCores() - 1) ## convention to leave 1 core for OS
+registerDoParallel(cluster)
+
+
+
+TBLUP_wide[1:10,1:10]
+A21 <- TBLUP_wide[,-c(1:4)]
+A21[1:10,1:10]
+
+
+################# missforest library: for imputation missing values in the entire data set ################
+
+A21 <- missForest(A21)
+A21 <- A21$ximp
+
+################ cross valdiation ############
+
+custom <- trainControl(method= "repeatedcv",
+                       number=5,
+                       repeats = 3,
+                       verboseIter = T)
+traits = 1
+bootstap = 5 # Here should be between 1000 to 10000
+
+acc_lm1 = matrix(nrow = bootstap, ncol = traits)
+acc_lm2 = matrix(nrow = bootstap, ncol = traits)
+
+acc_ridge1 = matrix(nrow = bootstap, ncol = traits)
+acc_ridge2 = matrix(nrow = bootstap, ncol = traits)
+
+acc_svm1 = matrix(nrow = bootstap, ncol = traits)
+acc_svm2 = matrix(nrow = bootstap, ncol = traits)
+
+acc_svmR1 = matrix(nrow = bootstap, ncol = traits)
+acc_svmR2 = matrix(nrow = bootstap, ncol = traits)
+
+acc_lasso1 = matrix(nrow = bootstap, ncol = traits)
+acc_lasso2 = matrix(nrow = bootstap, ncol = traits)
+
+acc_en1 = matrix(nrow = bootstap, ncol = traits)
+acc_en2 = matrix(nrow = bootstap, ncol = traits)
+
+acc_rf1 = matrix(nrow = bootstap, ncol = traits)
+acc_rf2 = matrix(nrow = bootstap, ncol = traits)
+
+
+acc_pls1 = matrix(nrow = bootstap, ncol = traits)
+acc_pls2 = matrix(nrow = bootstap, ncol = traits)
+
+acc_knn1 = matrix(nrow = bootstap, ncol = traits)
+acc_knn2 = matrix(nrow = bootstap, ncol = traits)
+
+
+ridge_varImp<- matrix(nrow = bootstap, ncol = traits)
+lasso_varImp<- matrix(nrow = bootstap, ncol = traits)
+en_varImp<- matrix(nrow = bootstap, ncol = traits)
+rf_varImp<- matrix(nrow = bootstap, ncol = traits)
+svm_varImp<- matrix(nrow = bootstap, ncol = traits)
+svmR_varImp<- matrix(nrow = bootstap, ncol = traits)
+pls_varImp<- matrix(nrow = bootstap, ncol = traits)
+knn_varImp<- matrix(nrow = bootstap, ncol = traits)
+
+besttune_en <-  matrix(nrow = bootstap, ncol = traits)
+model_resample <- matrix(nrow = bootstap, ncol = traits)
+
+
+for (r in 1:bootstap)
+{
+  ind <- createDataPartition(A21$GY, p=0.7, list=F)
+  
+  A21_train <- A21[ind,]
+  A21_test <- A21[-ind,]
+  
+  
+  
+  lm <- train(GY ~.,
+              A21_train,
+              method= 'lm',
+              trControl= custom)
+  
+  predicted_A21_train_GY_lm <- predict(lm,A21_train)
+  acc_lm1[r,1] <- cor(predicted_A21_train_GY_lm , A21_train$GY, use="complete")  
+  
+  predicted_A21_test_GY_lm <- predict(lm,A21_test)
+  acc_lm2[r,1] <- cor(predicted_A21_test_GY_lm , A21_test$GY, use="complete") 
+  
+  
+  
+  ridge <- train(GY~.,
+                 A21_train,
+                 method = 'glmnet',
+                 tuneGrid= expand.grid(alpha=0,
+                                       lambda = seq(0.0001,1, length=5)),
+                 trControl= custom)
+  
+  
+  predicted_A21_train_GY_ridge <- predict(ridge,A21_train)
+  acc_ridge1[r,1] <- cor(predicted_A21_train_GY_ridge , A21_train$GY, use="complete")  
+  
+  predicted_A21_test_GY_ridge <- predict(ridge,A21_test)
+  acc_ridge2[r,1] <- cor(predicted_A21_test_GY_ridge , A21_test$GY, use="complete") 
+  
+  varImpridge <- varImp(ridge, scale = T)$importance
+  varImpridge[,2] <- rownames(varImpridge)
+  ridge_varImp[[r]]<- list(varImpridge)  
+  
+  
+  lasso <- train(GY~.,
+                 A21_train,
+                 method = 'glmnet',
+                 tuneGrid= expand.grid(alpha=1,
+                                       lambda = seq(0.0001,1, length=5)),
+                 trControl= custom)
+  
+  predicted_A21_train_GY_lasso <- predict(lasso,A21_train)
+  acc_lasso1[r,1] <- cor(predicted_A21_train_GY_lasso , A21_train$GY, use="complete")  
+  
+  predicted_A21_test_GY_lasso <- predict(lasso,A21_test)
+  acc_lasso2[r,1] <- cor(predicted_A21_test_GY_lasso , A21_test$GY, use="complete") 
+  
+  varImp(lasso)
+  
+  varImplasso <- varImp(lasso, scale = T)$importance
+  varImplasso[,2] <- rownames(varImplasso)
+  lasso_varImp[[r]]<- list(varImplasso)
+  
+  
+  en <- train(GY~.,
+              A21_train,
+              method = 'glmnet',
+              tuneGrid= expand.grid(alpha=seq(0,1, length=10),
+                                    lambda = seq(0.0001,1, length=5)),
+              trControl= custom)
+  
+  predicted_A21_train_GY_en <- predict(en,A21_train)
+  acc_en1[r,1] <- cor(predicted_A21_train_GY_en , A21_train$GY, use="complete")  
+  
+  predicted_A21_test_GY_en <- predict(en,A21_test)
+  acc_en2[r,1] <- cor(predicted_A21_test_GY_en , A21_test$GY, use="complete") 
+  
+  
+  besttune_en[[r]] <-list(en$bestTune)
+  
+  varImpen <- varImp(en, scale = T)$importance
+  varImpen[,2] <- rownames(varImpen)
+  en_varImp[[r]]<- list(varImpen)
+  
+  
+  tunegridrf <- expand.grid(.mtry=c(5))
+  rf = train(GY~.,
+             A21_train,
+             method = "rf",
+             tuneGrid = tunegridrf,
+             ntree=1000,
+             trControl=custom)
+  
+  
+  predicted_A21_train_GY_rf <- predict(rf,A21_train)
+  acc_rf1[r,1] <- cor(predicted_A21_train_GY_rf , A21_train$GY, use="complete")  
+  
+  predicted_A21_test_GY_rf <- predict(rf,A21_test)
+  acc_rf2[r,1] <- cor(predicted_A21_test_GY_rf , A21_test$GY, use="complete") 
+  
+  
+  varImprf <- varImp(rf, scale = T)$importance
+  varImprf[,2] <- rownames(varImprf)
+  rf_varImp[[r]]<- list(varImprf)
+  
+  tunegridsvm = expand.grid(C = c(2))
+  svm <- train(GY~.,
+               A21_train,
+               method = "svmLinear",
+               tuneGrid = tunegridsvm,
+               preProcess = c("center","scale"),
+               trControl= custom)
+  
+  
+  predicted_A21_train_GY_svm <- predict(svm,A21_train)
+  acc_svm1[r,1] <- cor(predicted_A21_train_GY_svm , A21_train$GY, use="complete")  
+  
+  predicted_A21_test_GY_svm <- predict(svm,A21_test)
+  acc_svm2[r,1] <- cor(predicted_A21_test_GY_svm , A21_test$GY, use="complete") 
+  
+  
+  varImpsvm <- varImp(svm, scale = T)$importance
+  varImpsvm[,2] <- rownames(varImpsvm)
+  svm_varImp[[r]]<- list(varImpsvm)  
+  
+  
+  
+  svmR <- train(GY~.,
+                A21_train,
+                method = "svmRadial",
+                tuneLength = 10,
+                preProcess = c("center","scale"),
+                trControl= custom)
+  
+  
+  predicted_A21_train_GY_svmR <- predict(svmR,A21_train)
+  acc_svmR1[r,1] <- cor(predicted_A21_train_GY_svmR , A21_train$GY, use="complete")  
+  
+  predicted_A21_test_GY_svmR <- predict(svmR,A21_test)
+  acc_svmR2[r,1] <- cor(predicted_A21_test_GY_svmR , A21_test$GY, use="complete")
+  
+  
+  varImpsvmR <- varImp(svmR, scale = T)$importance
+  varImpsvmR[,2] <- rownames(varImpsvmR)
+  svmR_varImp[[r]]<- list(varImpsvmR)  
+  
+  
+  
+  
+  
+  pls <- train(GY~.,
+               A21_train,
+               method = "pcr",
+               scale = TRUE,
+               trControl = custom,
+               tuneLength = 100
+  )
+  
+  
+  predicted_A21_train_GY_pls <- predict(pls,A21_train)
+  acc_pls1[r,1] <- cor(predicted_A21_train_GY_pls , A21_train$GY, use="complete")  
+  
+  predicted_A21_train_GY_pls <- predict(pls,A21_test)
+  acc_pls2[r,1] <- cor(predicted_A21_train_GY_pls , A21_test$GY, use="complete") 
+  
+  
+  varImppls <- varImp(pls, scale = T)$importance
+  varImppls[,2] <- rownames(varImppls)
+  pls_varImp[[r]]<- list(varImppls)
+  
+  
+  knn <- train(GY~.,
+               A21_train,            
+               method="knn",
+               tuneLenght=100,
+               trControl=custom,
+               preProc=c("center", "scale"))
+  
+  
+  predicted_A21_train_GY_knn <- predict(knn,A21_train)
+  acc_knn1[r,1] <- cor(predicted_A21_train_GY_knn , A21_train$GY, use="complete")  
+  
+  predicted_A21_test_GY_knn <- predict(knn,A21_test)
+  acc_knn2[r,1] <- cor(predicted_A21_test_GY_knn , A21_test$GY, use="complete") 
+  
+  varImpknn <- varImp(knn, scale = T)$importance
+  varImpknn[,2] <- rownames(varImpknn)
+  knn_varImp[[r]]<- list(varImpknn)
+  
+  
+  
+  model_list <- list(LM = lm,
+                     SVM = svm,
+                     SVMR = svmR,
+                     Ridge = ridge,
+                     Lasso =lasso,
+                     Elasticnet = en,
+                     RandomForest = rf,
+                     PLS= pls,
+                     KNN=knn
+  )
+  
+  model_resample[[r]] <-list(resamples(model_list)$values) 
+  
+  }
+
+
+
+
+
+
