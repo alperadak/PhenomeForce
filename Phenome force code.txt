@@ -176,7 +176,7 @@ BV1 <- ranef(GLI_anova)$'Pedigree' + 0.135201437 # Breeding values ; add the int
 
 BV2 <- coef(GLI_anova)$Pedigree # Breeding values 
 names(BV2)[1]<- "GLI"
-hist(as.numeric(BV2$GLI)
+hist(as.numeric(BV2$GLI))
    
      
      
